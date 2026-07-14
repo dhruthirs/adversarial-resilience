@@ -1,4 +1,10 @@
 import torch
+import torch.nn as nn
+import torchvision
+import torchvision.transforms as transforms
+import torchvision.datasets as datasets
+import torchattacks
+
 # You would import your teammate's attack functions and models here
 # from attacks import fgsm_attack, pgd_attack 
 # from models import load_resnet18, load_mobilenet
@@ -19,7 +25,12 @@ class AdversarialPipeline:
         """
         print(f"[*] Loading {self.model_name}...")
         if self.model_name == "ResNet18":
-            return None # Replace with: load_resnet18().to(self.device)
+            model = torchvision.models.resnet18(weights=None, num_classes=10)
+            model.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
+            model.maxpool = nn.Identity()
+            model = model.to(self.device)
+            model.eval()
+            return model
         elif self.model_name == "MobileNetV2":
             return None # Replace with: load_mobilenet().to(self.device)
         elif self.model_name == "DenseNet":
@@ -31,8 +42,16 @@ class AdversarialPipeline:
     def evaluate_clean(self, test_loader):
         """Calculates Baseline Clean Accuracy"""
         print("[*] Evaluating Clean Accuracy...")
-        # Your teammate's clean evaluation loop goes here
-        clean_acc = 81.91 # Mocked from your PDF data for ResNet18
+        self.model.eval()
+        correct, total = 0, 0
+        with torch.no_grad():
+            for images, labels in test_loader:
+                images, labels = images.to(self.device), labels.to(self.device)
+                outputs = self.model(images)
+                _, predicted = torch.max(outputs, 1)
+                total += labels.size(0)
+                correct += (predicted == labels).sum().item()
+        clean_acc = 100 * correct / total
         return clean_acc
 
     def evaluate_attack(self, test_loader, attack_type="PGD", epsilon=8/255):
@@ -40,15 +59,26 @@ class AdversarialPipeline:
         Runs the attack and calculates Robust Accuracy and ASR.
         """
         print(f"[*] Running {attack_type} Attack with eps={epsilon:.4f}...")
-        
-        # 1. Generate adversarial images using teammate's attack code
-        # 2. Test model on adversarial images
-        # 3. Calculate ASR
-        
-        # Mocking data based on your PDF for ResNet18 / PGD
-        robust_acc = 0.00
-        asr = 100.00
-        
+        self.model.eval()
+        if attack_type == "FGSM":
+            attack = torchattacks.FGSM(self.model, eps=epsilon)
+        elif attack_type == "PGD":
+            attack = torchattacks.PGD(self.model, eps=epsilon, alpha=2/255, steps=20)
+        else:
+            raise ValueError(f"Attack type {attack_type} not supported.")
+
+        correct, total = 0, 0
+        for images, labels in test_loader:
+            images, labels = images.to(self.device), labels.to(self.device)
+            adv_images = attack(images, labels)
+            with torch.no_grad():
+                outputs = self.model(adv_images)
+                _, predicted = torch.max(outputs, 1)
+            total += labels.size(0)
+            correct += (predicted == labels).sum().item()
+
+        robust_acc = 100 * correct / total
+        asr = 100 - robust_acc
         return robust_acc, asr
 
     def run_full_benchmark(self, test_loader, epsilon=8/255):
@@ -73,8 +103,10 @@ class AdversarialPipeline:
 # HOW TO USE THIS SKELETON (The Plug-and-Play)
 # ==========================================
 if __name__ == "__main__":
-    # Mock dataloader (your teammate already has this)
-    test_loader = [] 
+    transform = transforms.Compose([transforms.ToTensor()])
+#    test_set = datasets.ImageFolder(root='cifar10/test', transform=transform)  Not in local folder hence...
+    test_set = datasets.CIFAR10(root='./data', train=False, download=True, transform=transform)
+    test_loader = torch.utils.data.DataLoader(test_set, batch_size=4, shuffle=False)
     
     # 1. Test ResNet
     pipeline_resnet = AdversarialPipeline(model_name="ResNet18")
