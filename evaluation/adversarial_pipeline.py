@@ -29,6 +29,20 @@ class AdversarialPipeline:
             model.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
             model.maxpool = nn.Identity()
             model = model.to(self.device)
+            model.load_state_dict(torch.load("models/resnet18_cifar10.pth", map_location=self.device))
+            model.eval()
+            return model
+        elif self.model_name == "BasicANN":
+            model = nn.Sequential(
+                nn.Flatten(),
+                nn.Linear(3 * 32 * 32, 512),
+                nn.ReLU(),
+                nn.Linear(512, 256),
+                nn.ReLU(),
+                nn.Linear(256, 10)
+            )
+            model = model.to(self.device)
+            model.load_state_dict(torch.load("models/basic_ann_cifar10.pth", map_location=self.device))
             model.eval()
             return model
         elif self.model_name == "MobileNetV2":
