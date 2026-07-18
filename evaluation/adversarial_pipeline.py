@@ -4,19 +4,27 @@ import torchvision
 import torchvision.transforms as transforms
 import torchvision.datasets as datasets
 import torchattacks
+import os
 
 # You would import your teammate's attack functions and models here
 # from attacks import fgsm_attack, pgd_attack 
 # from models import load_resnet18, load_mobilenet
 
 class AdversarialPipeline:
-    def __init__(self, model_name, dataset_name="CIFAR-10", device="cuda"):
+    def __init__(self, model_name, dataset_name="CIFAR-10", device="cuda", model_dir="models"):
         """
         Initializes the plug-and-play pipeline.
+        
+        Args:
+            model_name: Name of the model to load
+            dataset_name: Name of the dataset (e.g., "CIFAR-10")
+            device: Device to run on (cuda/cpu)
+            model_dir: Directory containing model weights
         """
         self.model_name = model_name
         self.dataset_name = dataset_name
         self.device = torch.device(device if torch.cuda.is_available() else "cpu")
+        self.model_dir = model_dir
         self.model = self._load_model()
         
     def _load_model(self):
@@ -29,10 +37,12 @@ class AdversarialPipeline:
             model.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
             model.maxpool = nn.Identity()
             model = model.to(self.device)
-            model.load_state_dict(torch.load("models/resnet18_cifar10.pth", map_location=self.device))
+            self._load_weights(model, "resnet18_cifar10.pth")
             model.eval()
             return model
         elif self.model_name == "BasicANN":
+            if self.dataset_name != "CIFAR-10":
+                raise ValueError(f"BasicANN only supports CIFAR-10, got {self.dataset_name}")
             model = nn.Sequential(
                 nn.Flatten(),
                 nn.Linear(3 * 32 * 32, 512),
@@ -42,16 +52,39 @@ class AdversarialPipeline:
                 nn.Linear(256, 10)
             )
             model = model.to(self.device)
-            model.load_state_dict(torch.load("models/basic_ann_cifar10.pth", map_location=self.device))
+            self._load_weights(model, "basic_ann_cifar10.pth")
             model.eval()
             return model
         elif self.model_name == "MobileNetV2":
-            return None # Replace with: load_mobilenet().to(self.device)
+            raise NotImplementedError(f"Model {self.model_name} is not yet implemented. Replace with: load_mobilenet().to(self.device)")
         elif self.model_name == "DenseNet":
-            return None # Replace with: load_densenet().to(self.device)
+            raise NotImplementedError(f"Model {self.model_name} is not yet implemented. Replace with: load_densenet().to(self.device)")
         # LATER: elif self.model_name == "ViT-Base": return load_vit()
         else:
             raise ValueError(f"Model {self.model_name} not supported yet.")
+    
+    def _load_weights(self, model, weights_file):
+        """
+        Load model weights with error handling.
+        
+        Args:
+            model: PyTorch model to load weights into
+            weights_file: Name of the weights file in model_dir
+            
+        Raises:
+            FileNotFoundError: If weights file doesn't exist
+        """
+        weights_path = os.path.join(self.model_dir, weights_file)
+        if not os.path.exists(weights_path):
+            raise FileNotFoundError(
+                f"Model weights not found at '{weights_path}'. "
+                f"Please ensure the file exists in the '{self.model_dir}' directory."
+            )
+        try:
+            model.load_state_dict(torch.load(weights_path, map_location=self.device))
+            print(f"[✓] Loaded weights from {weights_path}")
+        except Exception as e:
+            raise RuntimeError(f"Failed to load weights from {weights_path}: {str(e)}")
 
     def evaluate_clean(self, test_loader):
         """Calculates Baseline Clean Accuracy"""
@@ -127,7 +160,12 @@ if __name__ == "__main__":
     results_resnet = pipeline_resnet.run_full_benchmark(test_loader)
     print(results_resnet)
     
-    # 2. Test DenseNet (Just swap the string!)
-    pipeline_dense = AdversarialPipeline(model_name="DenseNet")
-    results_dense = pipeline_dense.run_full_benchmark(test_loader)
-    print(results_dense)
+    # 2. Test BasicANN
+    pipeline_ann = AdversarialPipeline(model_name="BasicANN")
+    results_ann = pipeline_ann.run_full_benchmark(test_loader)
+    print(results_ann)
+    
+    # 3. To test DenseNet when implemented, uncomment the line below:
+    # pipeline_dense = AdversarialPipeline(model_name="DenseNet")
+    # results_dense = pipeline_dense.run_full_benchmark(test_loader)
+    # print(results_dense)
