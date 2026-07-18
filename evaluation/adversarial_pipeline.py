@@ -153,7 +153,7 @@ if __name__ == "__main__":
     transform = transforms.Compose([transforms.ToTensor()])
 #    test_set = datasets.ImageFolder(root='cifar10/test', transform=transform)  Not in local folder hence...
     test_set = datasets.CIFAR10(root='./data', train=False, download=True, transform=transform)
-    test_loader = torch.utils.data.DataLoader(test_set, batch_size=4, shuffle=False)
+    test_loader = torch.utils.data.DataLoader(test_set, batch_size=64, shuffle=False)
     
     # 1. Test ResNet
     pipeline_resnet = AdversarialPipeline(model_name="ResNet18")
