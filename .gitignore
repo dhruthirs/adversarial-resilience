@@ -5,3 +5,6 @@ data/
 # Python Cache
 __pycache__/
 *.pyc
+
+# Trained Models
+models/
