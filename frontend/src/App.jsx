@@ -26,7 +26,7 @@ function App() {
     const formData = new FormData();
 
     formData.append("file", selectedImage);
-    formData.append("model", selectedModel);
+    formData.append("model_name", selectedModel);
     formData.append("attack", selectedAttack);
 
     try {
@@ -41,15 +41,21 @@ function App() {
         }
       );
 
+      if (!response.ok) {
+        throw new Error("Backend request failed");
+      }
+
       const data = await response.json();
 
       setResult(data);
+
     } catch (error) {
       console.error(error);
 
       setResult({
         message: "Could not connect to backend.",
       });
+
     } finally {
       setLoading(false);
     }
@@ -58,7 +64,6 @@ function App() {
   return (
     <div className="app">
 
-      {/* Header */}
       <header>
         <h1>Adversarial Resilience Analyzer</h1>
 
@@ -70,7 +75,8 @@ function App() {
 
       <main>
 
-        {/* Image Upload Section */}
+        {/* Upload Section */}
+
         <div className="upload-section">
 
           <h2>Upload Image</h2>
@@ -83,17 +89,20 @@ function App() {
 
           {preview && (
             <div className="preview">
+
               <img
                 src={preview}
                 alt="Selected"
               />
+
             </div>
           )}
 
         </div>
 
 
-        {/* Model and Attack Controls */}
+        {/* Controls */}
+
         <div className="controls">
 
           <label>
@@ -132,7 +141,8 @@ function App() {
         </div>
 
 
-        {/* Run Analysis Button */}
+        {/* Run Analysis */}
+
         <button
           onClick={runAnalysis}
           disabled={!selectedImage || loading}
@@ -141,25 +151,64 @@ function App() {
         </button>
 
 
-        {/* Result Section */}
+        {/* Results */}
+
         {result && (
           <div className="result">
 
             <h2>Analysis Result</h2>
 
-            {result.predicted_digit !== undefined && (
+
+            {result.clean_prediction !== undefined && (
               <>
+
                 <p>
-                  <strong>Predicted Digit:</strong>{" "}
-                  {result.predicted_digit}
+                  <strong>Model:</strong>{" "}
+                  {result.model}
                 </p>
 
                 <p>
-                  <strong>Confidence:</strong>{" "}
-                  {(result.confidence * 100).toFixed(2)}%
+                  <strong>Attack:</strong>{" "}
+                  {result.attack}
                 </p>
+
+
+                <hr />
+
+
+                <p>
+                  <strong>Clean Prediction:</strong>{" "}
+                  {result.clean_prediction}
+                </p>
+
+                <p>
+                  <strong>Clean Confidence:</strong>{" "}
+                  {(result.clean_confidence * 100).toFixed(2)}%
+                </p>
+
+
+                <p>
+                  <strong>Adversarial Prediction:</strong>{" "}
+                  {result.adversarial_prediction}
+                </p>
+
+                <p>
+                  <strong>Adversarial Confidence:</strong>{" "}
+                  {(result.adversarial_confidence * 100).toFixed(2)}%
+                </p>
+
+
+                <p>
+                  <strong>Attack Status:</strong>{" "}
+
+                  {result.attack_success
+                    ? "Successful"
+                    : "Unsuccessful"}
+                </p>
+
               </>
             )}
+
 
             {result.message && (
               <p>
