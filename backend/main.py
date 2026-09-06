@@ -35,6 +35,8 @@ device = torch.device(
     "cuda" if torch.cuda.is_available() else "cpu"
 )
 
+print("Using device:", device)
+
 
 # -------------------------
 # ANN Model
@@ -63,10 +65,57 @@ class SimpleANN(nn.Module):
 
 
 # -------------------------
-# Load ANN
+# CNN Model
 # -------------------------
 
-model = SimpleANN().to(device)
+class SimpleCNN(nn.Module):
+
+    def __init__(self):
+        super().__init__()
+
+        self.features = nn.Sequential(
+            nn.Conv2d(
+                1,
+                32,
+                kernel_size=3,
+                padding=1
+            ),
+            nn.ReLU(),
+            nn.MaxPool2d(2),
+
+            nn.Conv2d(
+                32,
+                64,
+                kernel_size=3,
+                padding=1
+            ),
+            nn.ReLU(),
+            nn.MaxPool2d(2)
+        )
+
+        self.classifier = nn.Sequential(
+            nn.Linear(64 * 7 * 7, 128),
+            nn.ReLU(),
+            nn.Linear(128, 10)
+        )
+
+    def forward(self, x):
+
+        x = self.features(x)
+
+        x = x.view(
+            x.size(0),
+            -1
+        )
+
+        x = self.classifier(x)
+
+        return x
+
+
+# -------------------------
+# Model Paths
+# -------------------------
 
 BASE_DIR = os.path.dirname(
     os.path.dirname(
@@ -74,21 +123,53 @@ BASE_DIR = os.path.dirname(
     )
 )
 
-MODEL_PATH = os.path.join(
+ANN_MODEL_PATH = os.path.join(
     BASE_DIR,
     "weights",
     "ann.pth"
 )
 
+CNN_MODEL_PATH = os.path.join(
+    BASE_DIR,
+    "weights",
+    "cnn.pth"
+)
 
-model.load_state_dict(
+
+# -------------------------
+# Load ANN
+# -------------------------
+
+ann_model = SimpleANN().to(device)
+
+ann_model.load_state_dict(
     torch.load(
-        MODEL_PATH,
+        ANN_MODEL_PATH,
         map_location=device
     )
 )
 
-model.eval()
+ann_model.eval()
+
+print("ANN model loaded successfully.")
+
+
+# -------------------------
+# Load CNN
+# -------------------------
+
+cnn_model = SimpleCNN().to(device)
+
+cnn_model.load_state_dict(
+    torch.load(
+        CNN_MODEL_PATH,
+        map_location=device
+    )
+)
+
+cnn_model.eval()
+
+print("CNN model loaded successfully.")
 
 
 # -------------------------
@@ -105,7 +186,7 @@ transform = transforms.Compose([
 
 
 # -------------------------
-# FGSM
+# FGSM Attack
 # -------------------------
 
 def fgsm_attack(
@@ -147,7 +228,7 @@ def fgsm_attack(
 
 
 # -------------------------
-# PGD
+# PGD Attack
 # -------------------------
 
 def pgd_attack(
@@ -262,7 +343,32 @@ async def predict_image(
     attack: str = Form("FGSM")
 ):
 
-    # Read image
+    # -------------------------
+    # Select Model
+    # -------------------------
+
+    model_name = model_name.upper()
+
+    if model_name == "ANN":
+
+        selected_model = ann_model
+
+    elif model_name == "CNN":
+
+        selected_model = cnn_model
+
+    else:
+
+        return {
+            "message":
+            f"Unsupported model: {model_name}"
+        }
+
+
+    # -------------------------
+    # Read Image
+    # -------------------------
+
     image_data = await file.read()
 
     image = Image.open(
@@ -270,7 +376,10 @@ async def predict_image(
     ).convert("L")
 
 
+    # -------------------------
     # Preprocess
+    # -------------------------
+
     image_tensor = transform(image)
 
     image_tensor = (
@@ -286,7 +395,7 @@ async def predict_image(
 
     with torch.no_grad():
 
-        clean_output = model(
+        clean_output = selected_model(
             image_tensor
         )
 
@@ -310,12 +419,12 @@ async def predict_image(
 
 
     # -------------------------
-    # Create label for attack
+    # Attack Label
     # -------------------------
 
-    # For an uploaded image we don't
-    # have the true label, so we use
-    # the clean prediction as the label.
+    # The true label of an uploaded
+    # image is unknown, so we use the
+    # clean prediction as the label.
 
     attack_label = torch.tensor(
         [clean_prediction],
@@ -330,7 +439,7 @@ async def predict_image(
     if attack.upper() == "FGSM":
 
         adversarial_image = fgsm_attack(
-            model,
+            selected_model,
             image_tensor,
             attack_label,
             epsilon=0.25
@@ -339,7 +448,7 @@ async def predict_image(
     elif attack.upper() == "PGD":
 
         adversarial_image = pgd_attack(
-            model,
+            selected_model,
             image_tensor,
             attack_label,
             epsilon=0.25,
@@ -361,7 +470,7 @@ async def predict_image(
 
     with torch.no_grad():
 
-        adversarial_output = model(
+        adversarial_output = selected_model(
             adversarial_image
         )
 
@@ -393,6 +502,10 @@ async def predict_image(
         != clean_prediction
     )
 
+
+    # -------------------------
+    # Response
+    # -------------------------
 
     return {
         "model": model_name,
