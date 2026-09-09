@@ -1,4 +1,7 @@
-from fastapi import FastAPI, UploadFile, File, Form
+from PIL import Image
+import uuid
+from fastapi import FastAPI, File, UploadFile, Form
+from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from PIL import Image
 import io
@@ -7,8 +10,15 @@ import torch.nn as nn
 from torchvision import transforms
 import os
 
+from backend.gan_attack import (
+    AttackGenerator,
+    generate_adversarial_image
+)
+
 
 app = FastAPI(title="Adversarial Resilience API")
+
+
 
 
 # -------------------------
@@ -122,6 +132,14 @@ BASE_DIR = os.path.dirname(
         os.path.abspath(__file__)
     )
 )
+ADVERSARIAL_DIR = os.path.join(BASE_DIR, "adversarial_outputs")
+os.makedirs(ADVERSARIAL_DIR, exist_ok=True)
+
+app.mount(
+    "/adversarial_outputs",
+    StaticFiles(directory=ADVERSARIAL_DIR),
+    name="adversarial_outputs"
+)
 
 ANN_MODEL_PATH = os.path.join(
     BASE_DIR,
@@ -170,6 +188,31 @@ cnn_model.load_state_dict(
 cnn_model.eval()
 
 print("CNN model loaded successfully.")
+
+# -------------------------
+# Load GAN Attack Generator
+# -------------------------
+
+GAN_MODEL_PATH = os.path.join(
+    BASE_DIR,
+    "weights",
+    "gan_attack_cnn_v2.pth"
+)
+
+gan_generator = AttackGenerator(
+    epsilon=0.15
+).to(device)
+
+gan_generator.load_state_dict(
+    torch.load(
+        GAN_MODEL_PATH,
+        map_location=device
+    )
+)
+
+gan_generator.eval()
+
+print("GAN attack generator loaded successfully.")
 
 
 # -------------------------
@@ -388,7 +431,7 @@ async def predict_image(
         .to(device)
     )
 
-
+    
     # -------------------------
     # Clean Prediction
     # -------------------------
@@ -432,7 +475,7 @@ async def predict_image(
     )
 
 
-    # -------------------------
+        # -------------------------
     # Attack
     # -------------------------
 
@@ -456,12 +499,53 @@ async def predict_image(
             steps=40
         )
 
+    elif attack.upper() == "GAN":
+
+        if model_name != "CNN":
+            return {
+                "message":
+                "GAN attack is currently supported only for CNN."
+            }
+
+        adversarial_image, _ = generate_adversarial_image(
+            gan_generator,
+            image_tensor,
+            epsilon=0.25
+        )
+
     else:
 
         return {
             "message":
             f"Unsupported attack: {attack}"
         }
+
+
+        # -------------------------
+    # Save Adversarial Image
+    # -------------------------
+
+    adversarial_filename = f"{uuid.uuid4().hex}.png"
+    adversarial_path = os.path.join(
+        ADVERSARIAL_DIR,
+        adversarial_filename
+    )
+
+    adversarial_array = (
+        adversarial_image[0]
+        .detach()
+        .cpu()
+        .squeeze()
+        .numpy()
+    )
+
+    adversarial_array = (
+        adversarial_array * 255
+    ).clip(0, 255).astype("uint8")
+
+    Image.fromarray(
+        adversarial_array
+    ).save(adversarial_path)
 
 
     # -------------------------
@@ -508,24 +592,27 @@ async def predict_image(
     # -------------------------
 
     return {
-        "model": model_name,
-        "attack": attack.upper(),
+    "model": model_name,
+    "attack": attack.upper(),
 
-        "clean_prediction":
-            clean_prediction,
+    "clean_prediction":
+        clean_prediction,
 
-        "clean_confidence":
-            round(clean_confidence, 4),
+    "clean_confidence":
+        round(clean_confidence, 4),
 
-        "adversarial_prediction":
-            adversarial_prediction,
+    "adversarial_prediction":
+        adversarial_prediction,
 
-        "adversarial_confidence":
-            round(adversarial_confidence, 4),
+    "adversarial_confidence":
+        round(adversarial_confidence, 4),
 
-        "attack_success":
-            attack_success,
+    "attack_success":
+        attack_success,
 
-        "message":
-            "Analysis completed successfully."
-    }
+    "adversarial_image_url":
+        f"/adversarial_outputs/{adversarial_filename}",
+
+    "message":
+        "Analysis completed successfully."
+}

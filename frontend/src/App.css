@@ -4,111 +4,280 @@
 
 body {
   margin: 0;
-  font-family: Arial, sans-serif;
-  background: #f5f7fb;
-  color: #1f2937;
+  font-family: Arial, Helvetica, sans-serif;
+  background: #f4f7fb;
+  color: #172033;
 }
 
 .app {
   min-height: 100vh;
 }
 
+/* =========================
+   HEADER
+========================= */
+
 header {
+  background: #172033;
+  color: white;
   text-align: center;
-  padding: 50px 20px 30px;
+  padding: 45px 20px;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.12);
 }
 
 header h1 {
-  margin-bottom: 10px;
+  margin: 0;
   font-size: 36px;
+  font-weight: 700;
+  letter-spacing: -0.5px;
 }
 
 header p {
-  margin: 0;
-  color: #6b7280;
+  margin: 12px 0 0;
+  font-size: 16px;
+  color: #cbd5e1;
 }
+
+/* =========================
+   MAIN
+========================= */
 
 main {
   width: 90%;
-  max-width: 850px;
-  margin: 0 auto;
-  padding-bottom: 50px;
+  max-width: 1050px;
+  margin: 40px auto;
 }
+
+/* =========================
+   CARDS
+========================= */
 
 .upload-section,
-.controls {
+.controls,
+.result {
   background: white;
+  border-radius: 18px;
   padding: 30px;
-  border-radius: 16px;
   margin-bottom: 25px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
+  box-shadow: 0 8px 25px rgba(30, 41, 59, 0.08);
+  border: 1px solid #e5eaf1;
 }
 
-.upload-section h2 {
+.upload-section h2,
+.result h2 {
   margin-top: 0;
+  margin-bottom: 20px;
+  font-size: 24px;
 }
 
-.upload-box {
-  height: 300px;
-  border: 2px dashed #9ca3af;
+/* =========================
+   FILE INPUT
+========================= */
+
+input[type="file"] {
+  width: 100%;
+  padding: 14px;
+  border: 2px dashed #cbd5e1;
   border-radius: 12px;
+  background: #f8fafc;
+  cursor: pointer;
+  font-size: 15px;
+}
+
+input[type="file"]:hover {
+  border-color: #64748b;
+}
+
+/* =========================
+   ORIGINAL IMAGE
+========================= */
+
+.preview {
+  margin-top: 25px;
+  text-align: center;
+}
+
+.preview img {
+  width: 240px;
+  height: 240px;
+  object-fit: contain;
+  image-rendering: pixelated;
+  background: black;
+  border-radius: 12px;
+  padding: 10px;
+  border: 1px solid #dbe2ea;
+  box-shadow: 0 5px 18px rgba(0, 0, 0, 0.12);
+}
+
+/* =========================
+   CONTROLS
+========================= */
+
+.controls {
+  display: flex;
+  gap: 45px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.controls label {
+  font-size: 17px;
+  font-weight: 600;
   display: flex;
   align-items: center;
-  justify-content: center;
+  gap: 12px;
+}
+
+.controls select {
+  min-width: 150px;
+  padding: 10px 14px;
+  border: 1px solid #cbd5e1;
+  border-radius: 9px;
+  background: white;
+  color: #172033;
+  font-size: 15px;
   cursor: pointer;
-  overflow: hidden;
+  outline: none;
 }
 
-.upload-box input {
-  display: none;
+.controls select:focus {
+  border-color: #475569;
 }
 
-.upload-box p {
-  color: #6b7280;
-}
+/* =========================
+   BUTTON
+========================= */
 
-.upload-box img {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-}
-
-.controls {
-  display: flex;
-  gap: 25px;
-}
-
-.control {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.control label {
-  font-weight: bold;
-}
-
-.control select {
-  padding: 12px;
-  border-radius: 8px;
-  border: 1px solid #d1d5db;
-  font-size: 16px;
-}
-
-.analyze-button {
-  width: 100%;
-  padding: 15px;
+button {
+  display: block;
+  margin: 10px auto 30px;
+  padding: 14px 30px;
   border: none;
   border-radius: 10px;
-  background: #111827;
+  background: #172033;
   color: white;
-  font-size: 17px;
-  font-weight: bold;
+  font-size: 16px;
+  font-weight: 600;
   cursor: pointer;
+  transition: 0.2s ease;
+  box-shadow: 0 5px 15px rgba(23, 32, 51, 0.18);
 }
 
-.analyze-button:disabled {
-  background: #9ca3af;
+button:hover:not(:disabled) {
+  transform: translateY(-2px);
+  background: #273449;
+  box-shadow: 0 8px 20px rgba(23, 32, 51, 0.25);
+}
+
+button:disabled {
+  opacity: 0.55;
   cursor: not-allowed;
+}
+
+/* =========================
+   RESULT
+========================= */
+
+.result {
+  text-align: center;
+}
+
+.result h2 {
+  text-align: left;
+  border-bottom: 1px solid #e5eaf1;
+  padding-bottom: 18px;
+}
+
+.result p {
+  font-size: 17px;
+  margin: 12px 0;
+}
+
+.result hr {
+  border: none;
+  border-top: 1px solid #e5eaf1;
+  margin: 25px 0;
+}
+
+/* =========================
+   ADVERSARIAL IMAGE
+========================= */
+
+.adversarial-preview {
+  margin-top: 35px;
+  padding-top: 25px;
+  border-top: 1px solid #e5eaf1;
+}
+
+.adversarial-preview h3 {
+  font-size: 21px;
+  margin-bottom: 20px;
+}
+
+.adversarial-preview img {
+  width: 280px;
+  height: 280px;
+  object-fit: contain;
+  image-rendering: pixelated;
+  background: black;
+  border-radius: 14px;
+  padding: 12px;
+  border: 2px solid #dbe2ea;
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+}
+
+/* =========================
+   MESSAGE
+========================= */
+
+.result p:last-child {
+  margin-top: 25px;
+  color: #64748b;
+}
+
+/* =========================
+   RESPONSIVE
+========================= */
+
+@media (max-width: 650px) {
+
+  header {
+    padding: 35px 15px;
+  }
+
+  header h1 {
+    font-size: 28px;
+  }
+
+  main {
+    width: 94%;
+    margin: 25px auto;
+  }
+
+  .upload-section,
+  .controls,
+  .result {
+    padding: 22px;
+  }
+
+  .controls {
+    gap: 20px;
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .controls label {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .controls select {
+    min-width: 140px;
+  }
+
+  .preview img,
+  .adversarial-preview img {
+    width: 220px;
+    height: 220px;
+  }
 }

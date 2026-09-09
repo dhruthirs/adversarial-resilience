@@ -65,7 +65,7 @@ function App() {
     <div className="app">
 
       <header>
-        <h1>Adversarial Resilience Analyzer</h1>
+        <h1>Improved Adversarial Attack Strategy</h1>
 
         <p>
           Analyze how machine learning models respond to adversarial attacks.
@@ -135,6 +135,7 @@ function App() {
             >
               <option>FGSM</option>
               <option>PGD</option>
+              <option>GAN</option>
             </select>
           </label>
 
@@ -205,6 +206,17 @@ function App() {
                     ? "Successful"
                     : "Unsuccessful"}
                 </p>
+
+                {result.adversarial_image_url && (
+  <div className="adversarial-preview">
+    <h3>Adversarial Image</h3>
+
+    <img
+      src={`http://127.0.0.1:8000${result.adversarial_image_url}`}
+      alt="Adversarial"
+    />
+  </div>
+)}
 
               </>
             )}
