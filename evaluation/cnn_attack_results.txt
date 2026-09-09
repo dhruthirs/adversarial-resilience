@@ -1,0 +1,23 @@
+CNN ATTACK COMPARISON
+=====================
+
+Clean Accuracy: 98.55%
+
+FGSM:
+Accuracy: 12.91%
+Attack Success Rate: 86.90%
+Successful Attacks: 8564
+
+PGD:
+Accuracy: 0.00%
+Attack Success Rate: 100.00%
+Successful Attacks: 9855
+
+GAN v2 (Inference Epsilon = 0.25):
+Accuracy: 71.64%
+Attack Success Rate: 27.58%
+Successful Attacks: 2718
+Mean |Perturbation|: 0.238533
+
+Initially Correct: 9855
+Test Samples: 10000
