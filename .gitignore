@@ -8,3 +8,13 @@ __pycache__/
 
 # Trained Models
 models/
+
+# Generated adversarial images
+adversarial_outputs/
+
+# Experimental attack outputs
+fgsm_vs_pgd_comparison.png
+
+# Experimental GAN weights
+weights/gan_attack_cnn.pth
+weights/gan_attack_cnn_v3.pth
