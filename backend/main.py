@@ -1,14 +1,18 @@
 from PIL import Image
 import uuid
+import io
+import os
+
 from fastapi import FastAPI, File, UploadFile, Form
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
-from PIL import Image
-import io
+
 import torch
 import torch.nn as nn
 from torchvision import transforms
-import os
+
+from vit_pytorch import ViT
+from efficient_kan import KAN
 
 from backend.gan_attack import (
     AttackGenerator,
@@ -16,14 +20,16 @@ from backend.gan_attack import (
 )
 
 
+# ============================================================
+# APP
+# ============================================================
+
 app = FastAPI(title="Adversarial Resilience API")
 
 
-
-
-# -------------------------
+# ============================================================
 # CORS
-# -------------------------
+# ============================================================
 
 app.add_middleware(
     CORSMiddleware,
@@ -37,9 +43,9 @@ app.add_middleware(
 )
 
 
-# -------------------------
-# Device
-# -------------------------
+# ============================================================
+# DEVICE
+# ============================================================
 
 device = torch.device(
     "cuda" if torch.cuda.is_available() else "cpu"
@@ -48,9 +54,9 @@ device = torch.device(
 print("Using device:", device)
 
 
-# -------------------------
-# ANN Model
-# -------------------------
+# ============================================================
+# ANN MODEL
+# ============================================================
 
 class SimpleANN(nn.Module):
 
@@ -74,9 +80,9 @@ class SimpleANN(nn.Module):
         return self.net(x)
 
 
-# -------------------------
-# CNN Model
-# -------------------------
+# ============================================================
+# CNN MODEL
+# ============================================================
 
 class SimpleCNN(nn.Module):
 
@@ -123,79 +129,313 @@ class SimpleCNN(nn.Module):
         return x
 
 
-# -------------------------
-# Model Paths
-# -------------------------
+# ============================================================
+# LSTM MODEL
+# ============================================================
+
+class SimpleLSTM(nn.Module):
+
+    def __init__(self):
+        super().__init__()
+
+        self.lstm = nn.LSTM(
+            input_size=28,
+            hidden_size=128,
+            num_layers=2,
+            batch_first=True
+        )
+
+        self.fc = nn.Linear(
+            128,
+            10
+        )
+
+    def forward(self, x):
+
+        # (B, 1, 28, 28)
+        x = x.squeeze(1)
+
+        # (B, 28, 28)
+        output, _ = self.lstm(x)
+
+        # Last timestep
+        x = output[:, -1, :]
+
+        return self.fc(x)
+
+
+# ============================================================
+# BiLSTM MODEL
+# ============================================================
+
+class SimpleBiLSTM(nn.Module):
+
+    def __init__(self):
+        super().__init__()
+
+        self.lstm = nn.LSTM(
+            input_size=28,
+            hidden_size=128,
+            num_layers=2,
+            batch_first=True,
+            bidirectional=True
+        )
+
+        self.fc = nn.Linear(
+            256,
+            10
+        )
+
+    def forward(self, x):
+
+        # (B, 1, 28, 28)
+        x = x.squeeze(1)
+
+        # (B, 28, 28)
+        output, _ = self.lstm(x)
+
+        # Last timestep
+        x = output[:, -1, :]
+
+        return self.fc(x)
+
+
+# ============================================================
+# KAN MODEL
+# ============================================================
+
+class MNISTKAN(nn.Module):
+
+    def __init__(self):
+        super().__init__()
+
+        self.kan = KAN(
+            layers_hidden=[
+                784,
+                64,
+                10
+            ],
+            grid_size=3,
+            spline_order=3
+        )
+
+    def forward(self, x):
+
+        x = x.view(
+            x.size(0),
+            -1
+        )
+
+        return self.kan(x)
+
+
+# ============================================================
+# ViT MODEL
+# ============================================================
+
+class SimpleViT(ViT):
+
+    def __init__(self):
+
+        super().__init__(
+            image_size=28,
+            patch_size=7,
+            num_classes=10,
+            dim=64,
+            depth=4,
+            heads=4,
+            mlp_dim=128,
+            channels=1
+        )
+
+
+# ============================================================
+# MODEL PATHS
+# ============================================================
 
 BASE_DIR = os.path.dirname(
     os.path.dirname(
         os.path.abspath(__file__)
     )
 )
-ADVERSARIAL_DIR = os.path.join(BASE_DIR, "adversarial_outputs")
-os.makedirs(ADVERSARIAL_DIR, exist_ok=True)
+
+WEIGHTS_DIR = os.path.join(
+    BASE_DIR,
+    "weights"
+)
+
+ADVERSARIAL_DIR = os.path.join(
+    BASE_DIR,
+    "adversarial_outputs"
+)
+
+os.makedirs(
+    ADVERSARIAL_DIR,
+    exist_ok=True
+)
+
+
+# ============================================================
+# STATIC ADVERSARIAL OUTPUT DIRECTORY
+# ============================================================
 
 app.mount(
     "/adversarial_outputs",
-    StaticFiles(directory=ADVERSARIAL_DIR),
+    StaticFiles(
+        directory=ADVERSARIAL_DIR
+    ),
     name="adversarial_outputs"
 )
 
+
+# ============================================================
+# WEIGHT PATHS
+# ============================================================
+
 ANN_MODEL_PATH = os.path.join(
-    BASE_DIR,
-    "weights",
+    WEIGHTS_DIR,
     "ann.pth"
 )
 
 CNN_MODEL_PATH = os.path.join(
-    BASE_DIR,
-    "weights",
+    WEIGHTS_DIR,
     "cnn.pth"
 )
 
-
-# -------------------------
-# Load ANN
-# -------------------------
-
-ann_model = SimpleANN().to(device)
-
-ann_model.load_state_dict(
-    torch.load(
-        ANN_MODEL_PATH,
-        map_location=device
-    )
+LSTM_MODEL_PATH = os.path.join(
+    WEIGHTS_DIR,
+    "lstm.pth"
 )
 
-ann_model.eval()
+BILSTM_MODEL_PATH = os.path.join(
+    WEIGHTS_DIR,
+    "bilstm.pth"
+)
+
+KAN_MODEL_PATH = os.path.join(
+    WEIGHTS_DIR,
+    "kan.pth"
+)
+
+VIT_MODEL_PATH = os.path.join(
+    WEIGHTS_DIR,
+    "vit.pth"
+)
+
+
+# ============================================================
+# LOAD MODEL HELPER
+# ============================================================
+
+def load_checkpoint(
+    model,
+    model_path
+):
+
+    checkpoint = torch.load(
+        model_path,
+        map_location=device,
+        weights_only=False
+    )
+
+    # Handle checkpoints that contain
+    # state_dict / model_state_dict
+    if isinstance(checkpoint, dict):
+
+        if "state_dict" in checkpoint:
+            checkpoint = checkpoint["state_dict"]
+
+        elif "model_state_dict" in checkpoint:
+            checkpoint = checkpoint["model_state_dict"]
+
+    model.load_state_dict(
+        checkpoint
+    )
+
+    model.to(device)
+    model.eval()
+
+    return model
+
+
+# ============================================================
+# LOAD ANN
+# ============================================================
+
+ann_model = load_checkpoint(
+    SimpleANN(),
+    ANN_MODEL_PATH
+)
 
 print("ANN model loaded successfully.")
 
 
-# -------------------------
-# Load CNN
-# -------------------------
+# ============================================================
+# LOAD CNN
+# ============================================================
 
-cnn_model = SimpleCNN().to(device)
-
-cnn_model.load_state_dict(
-    torch.load(
-        CNN_MODEL_PATH,
-        map_location=device
-    )
+cnn_model = load_checkpoint(
+    SimpleCNN(),
+    CNN_MODEL_PATH
 )
-
-cnn_model.eval()
 
 print("CNN model loaded successfully.")
 
-# -------------------------
-# Load GAN Attack Generator
-# -------------------------
+
+# ============================================================
+# LOAD LSTM
+# ============================================================
+
+lstm_model = load_checkpoint(
+    SimpleLSTM(),
+    LSTM_MODEL_PATH
+)
+
+print("LSTM model loaded successfully.")
+
+
+# ============================================================
+# LOAD BiLSTM
+# ============================================================
+
+bilstm_model = load_checkpoint(
+    SimpleBiLSTM(),
+    BILSTM_MODEL_PATH
+)
+
+print("BiLSTM model loaded successfully.")
+
+
+# ============================================================
+# LOAD KAN
+# ============================================================
+
+kan_model = load_checkpoint(
+    MNISTKAN(),
+    KAN_MODEL_PATH
+)
+
+print("KAN model loaded successfully.")
+
+
+# ============================================================
+# LOAD ViT
+# ============================================================
+
+vit_model = load_checkpoint(
+    SimpleViT(),
+    VIT_MODEL_PATH
+)
+
+print("ViT model loaded successfully.")
+
+
+# ============================================================
+# LOAD GAN ATTACK GENERATOR
+# ============================================================
 
 GAN_MODEL_PATH = os.path.join(
-    BASE_DIR,
-    "weights",
+    WEIGHTS_DIR,
     "gan_attack_cnn_v2.pth"
 )
 
@@ -206,31 +446,36 @@ gan_generator = AttackGenerator(
 gan_generator.load_state_dict(
     torch.load(
         GAN_MODEL_PATH,
-        map_location=device
+        map_location=device,
+        weights_only=False
     )
 )
 
 gan_generator.eval()
 
-print("GAN attack generator loaded successfully.")
+print(
+    "GAN attack generator loaded successfully."
+)
 
 
-# -------------------------
-# Image Preprocessing
-# -------------------------
+# ============================================================
+# IMAGE PREPROCESSING
+# ============================================================
 
 transform = transforms.Compose([
     transforms.Grayscale(
         num_output_channels=1
     ),
-    transforms.Resize((28, 28)),
+    transforms.Resize(
+        (28, 28)
+    ),
     transforms.ToTensor()
 ])
 
 
-# -------------------------
-# FGSM Attack
-# -------------------------
+# ============================================================
+# FGSM ATTACK
+# ============================================================
 
 def fgsm_attack(
     model,
@@ -270,9 +515,9 @@ def fgsm_attack(
     return adversarial_image.detach()
 
 
-# -------------------------
-# PGD Attack
-# -------------------------
+# ============================================================
+# PGD ATTACK
+# ============================================================
 
 def pgd_attack(
     model,
@@ -291,7 +536,9 @@ def pgd_attack(
 
         adversarial_image.requires_grad = True
 
-        output = model(adversarial_image)
+        output = model(
+            adversarial_image
+        )
 
         loss = nn.CrossEntropyLoss()(
             output,
@@ -334,9 +581,9 @@ def pgd_attack(
     return adversarial_image
 
 
-# -------------------------
-# Root
-# -------------------------
+# ============================================================
+# ROOT
+# ============================================================
 
 @app.get("/")
 def root():
@@ -347,9 +594,9 @@ def root():
     }
 
 
-# -------------------------
-# Upload
-# -------------------------
+# ============================================================
+# UPLOAD
+# ============================================================
 
 @app.post("/upload")
 async def upload_image(
@@ -375,9 +622,9 @@ async def upload_image(
     }
 
 
-# -------------------------
-# Predict + Attack
-# -------------------------
+# ============================================================
+# PREDICT + ATTACK
+# ============================================================
 
 @app.post("/predict")
 async def predict_image(
@@ -386,11 +633,12 @@ async def predict_image(
     attack: str = Form("FGSM")
 ):
 
-    # -------------------------
+    # --------------------------------------------------------
     # Select Model
-    # -------------------------
+    # --------------------------------------------------------
 
     model_name = model_name.upper()
+    attack = attack.upper()
 
     if model_name == "ANN":
 
@@ -400,6 +648,22 @@ async def predict_image(
 
         selected_model = cnn_model
 
+    elif model_name == "LSTM":
+
+        selected_model = lstm_model
+
+    elif model_name == "BILSTM":
+
+        selected_model = bilstm_model
+
+    elif model_name == "KAN":
+
+        selected_model = kan_model
+
+    elif model_name == "VIT":
+
+        selected_model = vit_model
+
     else:
 
         return {
@@ -408,22 +672,33 @@ async def predict_image(
         }
 
 
-    # -------------------------
+    # --------------------------------------------------------
     # Read Image
-    # -------------------------
+    # --------------------------------------------------------
 
-    image_data = await file.read()
+    try:
 
-    image = Image.open(
-        io.BytesIO(image_data)
-    ).convert("L")
+        image_data = await file.read()
+
+        image = Image.open(
+            io.BytesIO(image_data)
+        ).convert("L")
+
+    except Exception:
+
+        return {
+            "message":
+            "Invalid image file."
+        }
 
 
-    # -------------------------
+    # --------------------------------------------------------
     # Preprocess
-    # -------------------------
+    # --------------------------------------------------------
 
-    image_tensor = transform(image)
+    image_tensor = transform(
+        image
+    )
 
     image_tensor = (
         image_tensor
@@ -431,10 +706,10 @@ async def predict_image(
         .to(device)
     )
 
-    
-    # -------------------------
+
+    # --------------------------------------------------------
     # Clean Prediction
-    # -------------------------
+    # --------------------------------------------------------
 
     with torch.no_grad():
 
@@ -449,7 +724,9 @@ async def predict_image(
 
     clean_prediction = (
         clean_output
-        .argmax(dim=1)
+        .argmax(
+            dim=1
+        )
         .item()
     )
 
@@ -461,13 +738,15 @@ async def predict_image(
     )
 
 
-    # -------------------------
+    # --------------------------------------------------------
     # Attack Label
-    # -------------------------
+    # --------------------------------------------------------
 
-    # The true label of an uploaded
-    # image is unknown, so we use the
-    # clean prediction as the label.
+    # The actual label of an uploaded
+    # image is unknown.
+    #
+    # Therefore, we use the clean model
+    # prediction as the attack target.
 
     attack_label = torch.tensor(
         [clean_prediction],
@@ -475,11 +754,11 @@ async def predict_image(
     )
 
 
-        # -------------------------
+    # --------------------------------------------------------
     # Attack
-    # -------------------------
+    # --------------------------------------------------------
 
-    if attack.upper() == "FGSM":
+    if attack == "FGSM":
 
         adversarial_image = fgsm_attack(
             selected_model,
@@ -488,7 +767,7 @@ async def predict_image(
             epsilon=0.25
         )
 
-    elif attack.upper() == "PGD":
+    elif attack == "PGD":
 
         adversarial_image = pgd_attack(
             selected_model,
@@ -499,18 +778,24 @@ async def predict_image(
             steps=40
         )
 
-    elif attack.upper() == "GAN":
+    elif attack == "GAN":
+
+        # Current GAN was trained specifically
+        # against the CNN model.
 
         if model_name != "CNN":
+
             return {
                 "message":
                 "GAN attack is currently supported only for CNN."
             }
 
-        adversarial_image, _ = generate_adversarial_image(
-            gan_generator,
-            image_tensor,
-            epsilon=0.25
+        adversarial_image, _ = (
+            generate_adversarial_image(
+                gan_generator,
+                image_tensor,
+                epsilon=0.25
+            )
         )
 
     else:
@@ -521,11 +806,14 @@ async def predict_image(
         }
 
 
-        # -------------------------
+    # --------------------------------------------------------
     # Save Adversarial Image
-    # -------------------------
+    # --------------------------------------------------------
 
-    adversarial_filename = f"{uuid.uuid4().hex}.png"
+    adversarial_filename = (
+        f"{uuid.uuid4().hex}.png"
+    )
+
     adversarial_path = os.path.join(
         ADVERSARIAL_DIR,
         adversarial_filename
@@ -541,16 +829,21 @@ async def predict_image(
 
     adversarial_array = (
         adversarial_array * 255
-    ).clip(0, 255).astype("uint8")
+    ).clip(
+        0,
+        255
+    ).astype("uint8")
 
     Image.fromarray(
         adversarial_array
-    ).save(adversarial_path)
+    ).save(
+        adversarial_path
+    )
 
 
-    # -------------------------
+    # --------------------------------------------------------
     # Adversarial Prediction
-    # -------------------------
+    # --------------------------------------------------------
 
     with torch.no_grad():
 
@@ -565,7 +858,9 @@ async def predict_image(
 
     adversarial_prediction = (
         adversarial_output
-        .argmax(dim=1)
+        .argmax(
+            dim=1
+        )
         .item()
     )
 
@@ -577,9 +872,9 @@ async def predict_image(
     )
 
 
-    # -------------------------
+    # --------------------------------------------------------
     # Attack Status
-    # -------------------------
+    # --------------------------------------------------------
 
     attack_success = (
         adversarial_prediction
@@ -587,32 +882,41 @@ async def predict_image(
     )
 
 
-    # -------------------------
+    # --------------------------------------------------------
     # Response
-    # -------------------------
+    # --------------------------------------------------------
 
     return {
-    "model": model_name,
-    "attack": attack.upper(),
 
-    "clean_prediction":
-        clean_prediction,
+        "model": model_name,
 
-    "clean_confidence":
-        round(clean_confidence, 4),
+        "attack": attack,
 
-    "adversarial_prediction":
-        adversarial_prediction,
+        "clean_prediction":
+            clean_prediction,
 
-    "adversarial_confidence":
-        round(adversarial_confidence, 4),
+        "clean_confidence":
+            round(
+                clean_confidence,
+                4
+            ),
 
-    "attack_success":
-        attack_success,
+        "adversarial_prediction":
+            adversarial_prediction,
 
-    "adversarial_image_url":
-        f"/adversarial_outputs/{adversarial_filename}",
+        "adversarial_confidence":
+            round(
+                adversarial_confidence,
+                4
+            ),
 
-    "message":
-        "Analysis completed successfully."
-}
+        "attack_success":
+            attack_success,
+
+        "adversarial_image_url":
+            f"/adversarial_outputs/"
+            f"{adversarial_filename}",
+
+        "message":
+            "Analysis completed successfully."
+    }
