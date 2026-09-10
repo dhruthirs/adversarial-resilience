@@ -1,0 +1,17 @@
+UNIVERSAL FGSM ATTACK RESULTS
+==============================
+
+Epsilon: 0.25
+Test Samples: 10000
+Models: ANN, CNN, LSTM, BiLSTM, KAN, ViT
+
+Model        Clean Acc    Adv Acc      ASR      Successful
+----------------------------------------------------------
+ANN            97.55%       16.78%      82.80%    8077
+CNN            98.55%       65.53%      33.51%    3302
+LSTM           97.97%       17.18%      82.53%    8085
+BiLSTM         97.60%       14.13%      85.53%    8348
+KAN            97.26%       14.55%      85.04%    8271
+ViT            97.56%       13.50%      86.16%    8406
+
+Average Universal FGSM ASR: 75.93%

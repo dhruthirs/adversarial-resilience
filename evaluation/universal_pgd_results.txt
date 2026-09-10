@@ -1,0 +1,19 @@
+UNIVERSAL PGD ATTACK RESULTS
+=============================
+
+Epsilon: 0.25
+PGD Steps: 10
+Step Size: 0.007843
+Test Samples: 10000
+Models: ANN, CNN, LSTM, BiLSTM, KAN, ViT
+
+Model        Clean Acc    Adv Acc      ASR      Successful
+----------------------------------------------------------
+ANN            97.55%       86.85%      10.97%    1070
+CNN            98.55%       95.50%       3.09%    305
+LSTM           97.97%       89.28%       8.88%    870
+BiLSTM         97.60%       87.52%      10.33%    1008
+KAN            97.26%       85.75%      11.83%    1151
+ViT            97.56%        1.76%      98.20%    9580
+
+Average Universal PGD ASR: 23.88%
