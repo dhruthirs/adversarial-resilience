@@ -1,0 +1,7 @@
+digraph FrontendDependencies {
+  rankdir=LR;
+  node [shape=box, style=rounded];
+  "App" [label="App"];
+  "main" [label="main"];
+  "main" -> "App";
+}

@@ -13,6 +13,8 @@ from torchvision import transforms
 
 from vit_pytorch import ViT
 from efficient_kan import KAN
+from backend.restoration import WaveletSplineRestorer
+from backend.wgan_restoration import WGANRestorer
 
 from backend.gan_attack import (
     AttackGenerator,
@@ -431,13 +433,65 @@ print("ViT model loaded successfully.")
 
 
 # ============================================================
+# DIFFERENTIABLE RESTORATION
+# ============================================================
+
+RESTORER_MODEL_PATH = os.path.join(
+    WEIGHTS_DIR,
+    "restorer.pth",
+)
+restorer = WaveletSplineRestorer(channels=1).to(device)
+restorer_trained = os.path.exists(RESTORER_MODEL_PATH)
+if restorer_trained:
+    restorer.load_state_dict(
+        torch.load(
+            RESTORER_MODEL_PATH,
+            map_location=device,
+            weights_only=False,
+        )
+    )
+restorer.eval()
+
+WGAN_RESTORER_MODEL_PATH = os.path.join(
+    WEIGHTS_DIR,
+    "wgan_restorer.pth",
+)
+wgan_restorer = WGANRestorer().to(device)
+wgan_restorer_trained = os.path.exists(WGAN_RESTORER_MODEL_PATH)
+if wgan_restorer_trained:
+    wgan_restorer.load_state_dict(
+        torch.load(
+            WGAN_RESTORER_MODEL_PATH,
+            map_location=device,
+            weights_only=False,
+        )
+    )
+wgan_restorer.eval()
+
+
+class DefendedModel(nn.Module):
+    def __init__(self, restoration, classifier):
+        super().__init__()
+        self.restoration = restoration
+        self.classifier = classifier
+
+    def forward(self, x):
+        return self.classifier(self.restoration(x))
+
+
+# ============================================================
 # LOAD GAN ATTACK GENERATOR
 # ============================================================
 
 GAN_MODEL_PATH = os.path.join(
     WEIGHTS_DIR,
-    "gan_attack_cnn_v2.pth"
+    "gan_attack_all.pth",
 )
+if not os.path.exists(GAN_MODEL_PATH):
+    GAN_MODEL_PATH = os.path.join(
+        WEIGHTS_DIR,
+        "gan_attack_cnn_v2.pth",
+    )
 
 gan_generator = AttackGenerator(
     epsilon=0.15
@@ -630,7 +684,9 @@ async def upload_image(
 async def predict_image(
     file: UploadFile = File(...),
     model_name: str = Form("ANN"),
-    attack: str = Form("FGSM")
+    attack: str = Form("FGSM"),
+    restore: bool = Form(True),
+    restoration_method: str = Form("BSPLINE"),
 ):
 
     # --------------------------------------------------------
@@ -639,6 +695,16 @@ async def predict_image(
 
     model_name = model_name.upper()
     attack = attack.upper()
+    restoration_method = restoration_method.upper()
+    if restoration_method not in {"BSPLINE", "WGAN", "BSPLINE_WGAN"}:
+        return {"message": f"Unsupported restoration method: {restoration_method}"}
+    if restoration_method in {"WGAN", "BSPLINE_WGAN"} and not wgan_restorer_trained:
+        return {
+            "message": (
+                "WGAN restoration is not trained. Run "
+                "python backend\\train_wgan_restorer.py first."
+            )
+        }
 
     if model_name == "ANN":
 
@@ -753,6 +819,27 @@ async def predict_image(
         device=device
     )
 
+    def restore_image(image):
+        if restoration_method == "BSPLINE":
+            return restorer(image)
+        if restoration_method == "WGAN":
+            return wgan_restorer(image)
+        return wgan_restorer(restorer(image))
+
+    defended_model = DefendedModel(
+        restorer if restoration_method == "BSPLINE" else wgan_restorer,
+        selected_model,
+    ).to(device)
+    if restoration_method == "BSPLINE_WGAN":
+        defended_model = nn.Sequential(
+            restorer,
+            wgan_restorer,
+            selected_model,
+        ).to(device)
+    defended_model.eval()
+
+    attack_model = defended_model if restore else selected_model
+
 
     # --------------------------------------------------------
     # Attack
@@ -761,7 +848,7 @@ async def predict_image(
     if attack == "FGSM":
 
         adversarial_image = fgsm_attack(
-            selected_model,
+            attack_model,
             image_tensor,
             attack_label,
             epsilon=0.25
@@ -770,7 +857,7 @@ async def predict_image(
     elif attack == "PGD":
 
         adversarial_image = pgd_attack(
-            selected_model,
+            attack_model,
             image_tensor,
             attack_label,
             epsilon=0.25,
@@ -779,17 +866,6 @@ async def predict_image(
         )
 
     elif attack == "GAN":
-
-        # Current GAN was trained specifically
-        # against the CNN model.
-
-        if model_name != "CNN":
-
-            return {
-                "message":
-                "GAN attack is currently supported only for CNN."
-            }
-
         adversarial_image, _ = (
             generate_adversarial_image(
                 gan_generator,
@@ -839,6 +915,44 @@ async def predict_image(
     ).save(
         adversarial_path
     )
+
+    restored_image_url = None
+    restored_prediction = None
+    restored_confidence = None
+    restoration_delta = None
+    if restore:
+        with torch.no_grad():
+            restored_image = restore_image(adversarial_image)
+
+        with torch.no_grad():
+            restored_output = selected_model(restored_image)
+            restoration_delta = (
+                restored_image - adversarial_image
+            ).abs().mean().item()
+
+        restored_filename = f"{uuid.uuid4().hex}.png"
+        restored_path = os.path.join(
+            ADVERSARIAL_DIR,
+            restored_filename,
+        )
+        restored_array = (
+            restored_image[0]
+            .detach()
+            .cpu()
+            .squeeze()
+            .numpy()
+            * 255
+        ).clip(0, 255).astype("uint8")
+        Image.fromarray(restored_array).save(restored_path)
+
+        restored_probabilities = torch.softmax(restored_output, dim=1)
+        restored_prediction = restored_output.argmax(dim=1).item()
+        restored_confidence = restored_probabilities[
+            0, restored_prediction
+        ].item()
+        restored_image_url = (
+            f"/adversarial_outputs/{restored_filename}"
+        )
 
 
     # --------------------------------------------------------
@@ -891,6 +1005,7 @@ async def predict_image(
         "model": model_name,
 
         "attack": attack,
+        "restoration_method": restoration_method,
 
         "clean_prediction":
             clean_prediction,
@@ -912,6 +1027,35 @@ async def predict_image(
 
         "attack_success":
             attack_success,
+
+        "restoration_enabled":
+            restore,
+
+        "restored_prediction":
+            restored_prediction,
+
+        "restored_confidence":
+            round(restored_confidence, 4)
+            if restored_confidence is not None
+            else None,
+
+        "restoration_recovered":
+            restored_prediction == clean_prediction
+            if restored_prediction is not None
+            else None,
+
+        "restoration_mean_absolute_change":
+            round(restoration_delta, 6)
+            if restoration_delta is not None
+            else None,
+
+        "restorer_trained":
+            restorer_trained,
+        "wgan_restorer_trained":
+            wgan_restorer_trained,
+
+        "restored_image_url":
+            restored_image_url,
 
         "adversarial_image_url":
             f"/adversarial_outputs/"
