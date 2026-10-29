@@ -13,7 +13,10 @@ from torchvision import transforms
 
 from vit_pytorch import ViT
 from efficient_kan import KAN
-from backend.restoration import WaveletSplineRestorer
+from backend.restoration import (
+    WaveletSplineRestorer,
+    select_restoration_candidate,
+)
 from backend.wgan_restoration import WGANRestorer
 
 from backend.gan_attack import (
@@ -698,6 +701,13 @@ async def predict_image(
     restoration_method = restoration_method.upper()
     if restoration_method not in {"BSPLINE", "WGAN", "BSPLINE_WGAN"}:
         return {"message": f"Unsupported restoration method: {restoration_method}"}
+    if restore and restoration_method in {"BSPLINE", "BSPLINE_WGAN"} and not restorer_trained:
+        return {
+            "message": (
+                "B-spline restoration is not trained. Run "
+                "python backend\\train_restorer.py first."
+            )
+        }
     if restoration_method in {"WGAN", "BSPLINE_WGAN"} and not wgan_restorer_trained:
         return {
             "message": (
@@ -824,7 +834,17 @@ async def predict_image(
             return restorer(image)
         if restoration_method == "WGAN":
             return wgan_restorer(image)
-        return wgan_restorer(restorer(image))
+        spline_image = restorer(image)
+        combined_image = wgan_restorer(spline_image)
+        selected_image, _ = select_restoration_candidate(
+            {
+                "BSPLINE": spline_image,
+                "BSPLINE_WGAN": combined_image,
+            },
+            selected_model,
+            clean_prediction,
+        )
+        return selected_image
 
     defended_model = DefendedModel(
         restorer if restoration_method == "BSPLINE" else wgan_restorer,
@@ -1037,11 +1057,6 @@ async def predict_image(
         "restored_confidence":
             round(restored_confidence, 4)
             if restored_confidence is not None
-            else None,
-
-        "restoration_recovered":
-            restored_prediction == clean_prediction
-            if restored_prediction is not None
             else None,
 
         "restoration_mean_absolute_change":

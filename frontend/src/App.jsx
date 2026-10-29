@@ -153,7 +153,6 @@ function App() {
             Enable restoration
           </label>
 
-
           <label>
             Attack:
 
@@ -248,12 +247,6 @@ function App() {
                       <p>
                         <strong>Restored Confidence:</strong>{" "}
                         {(result.restored_confidence * 100).toFixed(2)}%
-                      </p>
-                      <p>
-                        <strong>Recovery:</strong>{" "}
-                        {result.restoration_recovered
-                          ? "Prediction recovered"
-                          : "Prediction not recovered"}
                       </p>
                       <p>
                         <strong>Mean pixel change:</strong>{" "}

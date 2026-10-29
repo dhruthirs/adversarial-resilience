@@ -121,3 +121,29 @@ class WaveletSplineRestorer(nn.Module):
         restored = filtered + self.refinement(features)
 
         return restored.clamp(0.0, 1.0)
+
+
+def select_restoration_candidate(candidates, classifier, reference_prediction):
+    names = list(candidates)
+    images = torch.stack([candidates[name] for name in names], dim=1)
+    logits = torch.stack(
+        [classifier(candidates[name]) for name in names],
+        dim=1,
+    )
+    predictions = logits.argmax(dim=2)
+    confidence = logits.softmax(dim=2).amax(dim=2)
+    reference = torch.as_tensor(
+        reference_prediction,
+        device=images.device,
+        dtype=predictions.dtype,
+    )
+    if reference.ndim == 0:
+        reference = reference.expand(images.size(0))
+    matches = predictions.eq(reference[:, None])
+    matching_scores = confidence.masked_fill(~matches, float("-inf"))
+    has_match = matches.any(dim=1)
+    matching_choice = matching_scores.argmax(dim=1)
+    fallback_choice = confidence.argmax(dim=1)
+    choice = torch.where(has_match, matching_choice, fallback_choice)
+    batch = torch.arange(images.size(0), device=images.device)
+    return images[batch, choice], logits[batch, choice]

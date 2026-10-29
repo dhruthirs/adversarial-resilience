@@ -16,7 +16,10 @@ sys.path.insert(0, ROOT)
 
 from backend.gan_attack import AttackGenerator, generate_adversarial_image
 from backend.mnist_models import load_mnist_classifiers
-from backend.restoration import WaveletSplineRestorer
+from backend.restoration import (
+    WaveletSplineRestorer,
+    select_restoration_candidate,
+)
 from backend.wgan_restoration import WGANRestorer
 
 
@@ -132,9 +135,20 @@ def main():
                 pgd_prediction = model(pgd).argmax(1)
                 gan_prediction = model(gan_attack).argmax(1)
                 refined_gan_prediction = model(refined_gan_attack).argmax(1)
-                bspline_prediction = model(spline(pgd)).argmax(1)
-                wgan_prediction = model(wgan(pgd)).argmax(1)
-                combined_prediction = model(wgan(spline(pgd))).argmax(1)
+                spline_image = spline(pgd)
+                wgan_image = wgan(pgd)
+                combined_image = wgan(spline_image)
+                combined_image, combined_logits = select_restoration_candidate(
+                    {
+                        "BSPLINE": spline_image,
+                        "BSPLINE_WGAN": combined_image,
+                    },
+                    model,
+                    clean_prediction,
+                )
+                bspline_prediction = model(spline_image).argmax(1)
+                wgan_prediction = model(wgan_image).argmax(1)
+                combined_prediction = combined_logits.argmax(1)
                 totals[name]["clean"] += clean_correct.sum().item()
                 totals[name]["fgsm_success"] += (
                     (clean_correct & ~fgsm_prediction.eq(labels)).sum().item()
