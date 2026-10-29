@@ -838,7 +838,7 @@ async def predict_image(
         ).to(device)
     defended_model.eval()
 
-    attack_model = defended_model if restore else selected_model
+    attack_model = selected_model
 
 
     # --------------------------------------------------------
